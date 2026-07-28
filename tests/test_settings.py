@@ -3,6 +3,8 @@ import pytest
 from bot.database.methods.settings import (
     get_maintenance_mode,
     set_maintenance_mode,
+    get_topup_notification_settings,
+    set_topup_notification_settings,
 )
 from bot.middleware.security import AuthenticationMiddleware
 
@@ -29,3 +31,14 @@ async def test_auth_middleware_restores_maintenance_mode_from_database(fake_cach
 
     assert middleware.maintenance_mode is True
     assert fake_cache.store["bot:maintenance_mode"] is True
+
+
+@pytest.mark.asyncio
+async def test_topup_notification_destination_is_persisted_and_can_be_disabled():
+    assert await get_topup_notification_settings() == (None, None)
+
+    await set_topup_notification_settings(-1001234567890, 42)
+    assert await get_topup_notification_settings() == (-1001234567890, 42)
+
+    await set_topup_notification_settings(None, 42)
+    assert await get_topup_notification_settings() == (None, None)

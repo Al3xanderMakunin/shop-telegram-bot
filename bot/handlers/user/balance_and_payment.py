@@ -15,7 +15,13 @@ from bot.database.methods.cache_utils import safe_create_task
 from bot.misc import EnvKeys, ItemPurchaseRequest, validate_telegram_id, validate_money_amount, PaymentRequest
 from bot.handlers.other import _any_payment_method_enabled, is_safe_item_name, caller_name
 from bot.misc.metrics import get_metrics
-from bot.misc.services import CryptoPayAPI, CryptoPayAPIError, send_stars_invoice, send_fiat_invoice
+from bot.misc.services import (
+    CryptoPayAPI,
+    CryptoPayAPIError,
+    send_stars_invoice,
+    send_fiat_invoice,
+)
+from bot.misc.services.topup_notifier import notify_balance_topup
 from bot.misc.services.payment import _minor_units_for, payload_amount
 from bot.filters import ValidAmountFilter
 from bot.i18n import localize, esc
@@ -282,6 +288,13 @@ async def checking_payment(call: CallbackQuery, state: FSMContext):
 
             # Send a notification to the referrer
             await _notify_referrer_bonus(call.bot, user_id, balance_amount, call.from_user.first_name, call.from_user.id)
+            await notify_balance_topup(
+                call.bot,
+                user_id=user_id,
+                user_name=call.from_user.first_name or str(user_id),
+                provider="cryptopay",
+                external_id=str(invoice_id),
+            )
 
             await call.message.edit_text(
                 localize("payments.topped_simple",
@@ -396,6 +409,13 @@ async def successful_payment_handler(message: Message):
 
     # Sending notification to referrer
     await _notify_referrer_bonus(message.bot, user_id, amount, message.from_user.first_name, message.from_user.id)
+    await notify_balance_topup(
+        message.bot,
+        user_id=user_id,
+        user_name=message.from_user.first_name or str(user_id),
+        provider=provider,
+        external_id=external_id,
+    )
 
     metrics = get_metrics()
     if metrics:

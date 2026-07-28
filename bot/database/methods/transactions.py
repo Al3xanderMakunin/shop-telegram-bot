@@ -221,6 +221,7 @@ async def process_payment_with_referral(
 
     try:
         async with Database().session() as s:
+            completed_at = datetime.now(timezone.utc)
             # 1. Check the idempotency of the payment
             existing_payment = (await s.execute(
                 select(Payments).where(
@@ -233,6 +234,7 @@ async def process_payment_with_referral(
                 if existing_payment.status == "succeeded":
                     raise _Abort("already_processed")
                 existing_payment.status = "succeeded"
+                existing_payment.updated_at = completed_at
                 amount = existing_payment.amount
             else:
                 payment = Payments(
@@ -241,7 +243,9 @@ async def process_payment_with_referral(
                     user_id=user_id,
                     amount=amount,
                     currency=EnvKeys.PAY_CURRENCY,
-                    status="succeeded"
+                    status="succeeded",
+                    created_at=completed_at,
+                    updated_at=completed_at,
                 )
                 s.add(payment)
 
@@ -256,7 +260,7 @@ async def process_payment_with_referral(
             operation = Operations(
                 user_id=user_id,
                 operation_value=amount,
-                operation_time=datetime.now(timezone.utc)
+                operation_time=completed_at,
             )
             s.add(operation)
 
