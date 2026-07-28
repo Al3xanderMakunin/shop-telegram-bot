@@ -80,7 +80,7 @@ from bot.database.main import Database
 from bot.database.models.main import (
     User, Role, Categories, Goods, ItemValues,
     BoughtGoods, Operations, Payments, ReferralEarnings,
-    AuditLog, PromoCodes, CartItems, Reviews, promo_scope_for,
+    AuditLog, PromoCodes, CartItems, Reviews, BotSettings, promo_scope_for,
 )
 from bot.misc.metrics import get_metrics
 from bot.misc.caching import get_cache_manager
@@ -400,6 +400,59 @@ class PaymentsAdmin(ModelView, model=Payments):
     icon = "fa-solid fa-credit-card"
 
 
+class BotSettingsAdmin(AuditModelView, model=BotSettings):
+    column_list = [
+        BotSettings.id,
+        BotSettings.maintenance_mode,
+        BotSettings.topup_notification_chat_id,
+        BotSettings.topup_notification_thread_id,
+    ]
+    form_columns = [
+        BotSettings.maintenance_mode,
+        BotSettings.topup_notification_chat_id,
+        BotSettings.topup_notification_thread_id,
+    ]
+    form_args = {
+        "topup_notification_chat_id": {
+            "description": (
+                "Telegram chat ID for completed top-up notifications "
+                "(usually a negative ID for a group). Empty disables notifications."
+            ),
+        },
+        "topup_notification_thread_id": {
+            "description": (
+                "Optional topic/thread ID (message_thread_id) inside a forum group. "
+                "Leave empty to post to the chat's general topic."
+            ),
+        },
+    }
+    can_create = False
+    can_delete = False
+    name = "Bot Setting"
+    name_plural = "Bot Settings"
+    icon = "fa-solid fa-gear"
+
+    async def on_model_change(self, data: dict, model: Any, is_created: bool, request: Request) -> None:
+        def _optional_int(value, label: str) -> int | None:
+            if value in (None, "", "None"):
+                return None
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                raise ValueError(f"{label} must be an integer.")
+
+        chat_id = _optional_int(data.get("topup_notification_chat_id"), "Chat ID")
+        thread_id = _optional_int(data.get("topup_notification_thread_id"), "Topic/thread ID")
+        if chat_id == 0:
+            raise ValueError("The chat ID must be a non-zero integer.")
+        if thread_id is not None and thread_id <= 0:
+            raise ValueError("The topic/thread ID must be a positive integer.")
+        if chat_id is None and thread_id is not None:
+            raise ValueError("Set the notification chat ID before setting a topic/thread ID.")
+        data["topup_notification_chat_id"] = chat_id
+        data["topup_notification_thread_id"] = thread_id
+
+
 class ReferralEarningsAdmin(ModelView, model=ReferralEarnings):
     column_list = [ReferralEarnings.id, ReferralEarnings.referrer_id,
                    ReferralEarnings.referral_id, ReferralEarnings.amount,
@@ -713,6 +766,7 @@ def create_admin_app(bot: Any = None) -> Starlette:
     admin.add_view(BoughtGoodsAdmin)
     admin.add_view(OperationsAdmin)
     admin.add_view(PaymentsAdmin)
+    admin.add_view(BotSettingsAdmin)
     admin.add_view(ReferralEarningsAdmin)
     admin.add_view(AuditLogAdmin)
     admin.add_view(PromoCodeAdmin)

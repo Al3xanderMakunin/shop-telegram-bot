@@ -61,6 +61,7 @@ def admin_console_keyboard(maintenance_mode: bool = False, role: int = 127) -> I
     if role & Permission.BROADCAST:
         kb.button(text=localize("admin.menu.broadcast"), callback_data="send_message")
     if role & Permission.SETTINGS_MANAGE:
+        kb.button(text=localize("admin.menu.notifications"), callback_data="topup_notifications")
         maintenance_key = "admin.menu.maintenance_on" if maintenance_mode else "admin.menu.maintenance_off"
         kb.button(text=localize(maintenance_key), callback_data="toggle_maintenance")
     kb.button(text=localize("btn.back"), callback_data="back_to_menu")

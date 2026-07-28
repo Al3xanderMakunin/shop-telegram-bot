@@ -399,8 +399,29 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         # === Admin: Maintenance ===
         "admin.menu.maintenance_on": "🔧 Тех. работы: ВКЛ",
         "admin.menu.maintenance_off": "🔧 Тех. работы: ВЫКЛ",
+        "admin.menu.notifications": "💰 Уведомления о пополнениях",
         "admin.maintenance.enabled": "✅ Режим тех. работ включён",
         "admin.maintenance.disabled": "✅ Режим тех. работ выключён",
+        "admin.notifications.title": (
+            "💰 <b>Уведомления о пополнениях</b>\n\n"
+            "ID чата: <code>{chat_id}</code>\n"
+            "ID темы: <code>{thread_id}</code>"
+        ),
+        "admin.notifications.disabled": "не настроен",
+        "admin.notifications.general": "общая тема",
+        "admin.notifications.set_chat": "💬 Изменить ID чата",
+        "admin.notifications.set_thread": "🧵 Изменить ID темы",
+        "admin.notifications.disable": "🔕 Отключить уведомления",
+        "admin.notifications.chat_prompt": (
+            "Отправьте ID чата для уведомлений. Для группы это обычно отрицательное число."
+        ),
+        "admin.notifications.thread_prompt": (
+            "Отправьте ID темы (message_thread_id) или 0, чтобы отправлять в общую тему."
+        ),
+        "admin.notifications.invalid_chat": "❌ ID чата должен быть целым ненулевым числом.",
+        "admin.notifications.invalid_thread": "❌ ID темы должен быть положительным числом или 0.",
+        "admin.notifications.chat_required": "Сначала настройте ID чата.",
+        "admin.notifications.disabled_ok": "✅ Уведомления отключены.",
 
         # === Promo Codes ===
         "btn.apply_promo": "🏷 Применить промокод",
@@ -936,8 +957,29 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         # === Admin: Maintenance ===
         "admin.menu.maintenance_on": "🔧 Maintenance: ON",
         "admin.menu.maintenance_off": "🔧 Maintenance: OFF",
+        "admin.menu.notifications": "💰 Top-up notifications",
         "admin.maintenance.enabled": "✅ Maintenance mode enabled",
         "admin.maintenance.disabled": "✅ Maintenance mode disabled",
+        "admin.notifications.title": (
+            "💰 <b>Top-up notifications</b>\n\n"
+            "Chat ID: <code>{chat_id}</code>\n"
+            "Topic ID: <code>{thread_id}</code>"
+        ),
+        "admin.notifications.disabled": "not configured",
+        "admin.notifications.general": "general topic",
+        "admin.notifications.set_chat": "💬 Change chat ID",
+        "admin.notifications.set_thread": "🧵 Change topic ID",
+        "admin.notifications.disable": "🔕 Disable notifications",
+        "admin.notifications.chat_prompt": (
+            "Send the notification chat ID. Group IDs are usually negative."
+        ),
+        "admin.notifications.thread_prompt": (
+            "Send the topic ID (message_thread_id), or 0 to use the general topic."
+        ),
+        "admin.notifications.invalid_chat": "❌ Chat ID must be a non-zero integer.",
+        "admin.notifications.invalid_thread": "❌ Topic ID must be a positive integer or 0.",
+        "admin.notifications.chat_required": "Configure the chat ID first.",
+        "admin.notifications.disabled_ok": "✅ Notifications disabled.",
 
         # === Promo Codes ===
         "btn.apply_promo": "🏷 Apply promo code",

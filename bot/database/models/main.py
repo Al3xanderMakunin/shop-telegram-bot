@@ -46,6 +46,12 @@ class BotSettings(Database.BASE):
     maintenance_mode: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default='false'
     )
+    topup_notification_chat_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, nullable=True
+    )
+    topup_notification_thread_id: Mapped[Optional[int]] = mapped_column(
+        Integer, nullable=True
+    )
 
 
 class Role(Database.BASE):
