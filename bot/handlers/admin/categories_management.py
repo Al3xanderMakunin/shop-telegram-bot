@@ -24,6 +24,7 @@ async def categories_callback_handler(call: CallbackQuery):
         (localize("admin.categories.add"), "add_category"),
         (localize("admin.categories.rename"), "update_category"),
         (localize("admin.categories.delete"), "delete_category"),
+        ("🖼 Медиа категории", "category_media"),
         (localize("btn.back"), "console"),
     ]
     await call.message.edit_text(

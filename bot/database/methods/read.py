@@ -8,7 +8,7 @@ from sqlalchemy import func, exists, select, inspect as sa_inspect
 
 from bot.database.models import Database, User, ItemValues, Goods, Categories, Role, BoughtGoods, \
     Operations, ReferralEarnings, Permission
-from bot.database.models.main import PromoCodes, PromoCodeUsages, CartItems, Reviews, StockSubscriptions
+from bot.database.models.main import PromoCodes, PromoCodeUsages, CartItems, Reviews, StockSubscriptions, CatalogMedia
 from bot.misc.caching import get_cache_manager, single_flight
 
 F = TypeVar('F', bound=Callable[..., Coroutine[Any, Any, Any]])
@@ -73,6 +73,22 @@ async def _fetch_one_dict(model, *whereclauses) -> dict | None:
 async def check_user(telegram_id: int | str) -> Optional[dict]:
     """Return user by Telegram ID or None if not found."""
     return await _fetch_one_dict(User, User.telegram_id == telegram_id)
+
+
+async def get_catalog_media(owner_type: str, owner_name: str) -> list[dict]:
+    if owner_type not in {"category", "item"}:
+        return []
+    async with Database().session() as s:
+        owner_model, owner_column = (
+            (Categories, CatalogMedia.category_id) if owner_type == "category"
+            else (Goods, CatalogMedia.item_id)
+        )
+        rows = (await s.execute(
+            select(CatalogMedia).join(owner_model, owner_column == owner_model.id)
+            .where(owner_model.name == owner_name)
+            .order_by(CatalogMedia.position, CatalogMedia.id)
+        )).scalars().all()
+        return [{"media_type": r.media_type, "file_id": r.file_id} for r in rows]
 
 
 async def check_role(telegram_id: int) -> int:

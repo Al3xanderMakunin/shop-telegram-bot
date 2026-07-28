@@ -32,6 +32,7 @@ async def goods_management_callback_handler(call: CallbackQuery, state):
         (localize("admin.goods.sale_manage"), "manage_sale"),
         (localize("admin.goods.delete_position"), "delete_item"),
         (localize("admin.goods.show_items"), "show__items_in_position"),
+        ("🖼 Медиа позиции", "item_media"),
         (localize("btn.back"), "console"),
     ]
     markup = simple_buttons(actions, per_row=1)

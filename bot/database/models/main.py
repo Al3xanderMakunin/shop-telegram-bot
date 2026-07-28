@@ -152,6 +152,9 @@ class Categories(Database.BASE):
     name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
     items: Mapped[list["Goods"]] = relationship(
         "Goods", back_populates="category", lazy='raise', passive_deletes=True)
+    media: Mapped[list["CatalogMedia"]] = relationship(
+        "CatalogMedia", back_populates="category", lazy='raise',
+        passive_deletes=True, order_by="CatalogMedia.position")
 
     def __str__(self):
         return self.name or ""
@@ -170,9 +173,43 @@ class Goods(Database.BASE):
     category: Mapped["Categories"] = relationship("Categories", back_populates="items", lazy='raise')
     values: Mapped[list["ItemValues"]] = relationship(
         "ItemValues", back_populates="item", lazy='raise', passive_deletes=True)
+    media: Mapped[list["CatalogMedia"]] = relationship(
+        "CatalogMedia", back_populates="item", lazy='raise',
+        passive_deletes=True, order_by="CatalogMedia.position")
 
     def __str__(self):
         return self.name or ""
+
+
+class CatalogMedia(Database.BASE):
+    """Telegram-hosted media attached to a category or a catalog position."""
+    __tablename__ = 'catalog_media'
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    category_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey('categories.id', ondelete='CASCADE'), nullable=True, index=True)
+    item_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey('goods.id', ondelete='CASCADE'), nullable=True, index=True)
+    media_type: Mapped[str] = mapped_column(String(8), nullable=False)
+    file_id: Mapped[str] = mapped_column(Text, nullable=False)
+    position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    category: Mapped[Optional["Categories"]] = relationship(
+        "Categories", back_populates="media", lazy='raise')
+    item: Mapped[Optional["Goods"]] = relationship(
+        "Goods", back_populates="media", lazy='raise')
+
+    __table_args__ = (
+        CheckConstraint("media_type IN ('photo','video')", name='ck_catalog_media_type'),
+        CheckConstraint(
+            '(category_id IS NOT NULL AND item_id IS NULL) OR '
+            '(category_id IS NULL AND item_id IS NOT NULL)',
+            name='ck_catalog_media_single_owner',
+        ),
+        UniqueConstraint('category_id', 'file_id', name='uq_category_media_file'),
+        UniqueConstraint('item_id', 'file_id', name='uq_item_media_file'),
+        Index('ix_catalog_media_category_position', 'category_id', 'position', 'id'),
+        Index('ix_catalog_media_item_position', 'item_id', 'position', 'id'),
+    )
 
 
 class ItemValues(Database.BASE):

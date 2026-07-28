@@ -33,6 +33,7 @@ from bot.misc.metrics import get_metrics
 from bot.states import ShopStates
 from bot.states.review_state import ReviewFSM
 from bot.states.promo_state import PromoFSM
+from bot.misc.catalog_media import send_catalog_media
 
 router = Router()
 
@@ -232,6 +233,7 @@ async def _show_goods_page(call: CallbackQuery, state: FSMContext,
         nav_cb_prefix="gp_",
     )
 
+    await send_catalog_media(call.bot, call.from_user.id, "category", category_name)
     await call.message.edit_text(localize("shop.goods.choose"), reply_markup=markup)
     await state.update_data(
         current_category=category_name,
@@ -323,6 +325,7 @@ async def _open_item(call: CallbackQuery, state: FSMContext, item_name: str, bac
         updates["applied_promo"] = None
     await state.update_data(**updates)
 
+    await send_catalog_media(call.bot, call.from_user.id, "item", item_name)
     await _render_item_page(call, state, item_name, back_data, user_id=call.from_user.id)
 
 

@@ -5,7 +5,7 @@ from sqlalchemy import select, exists, func as sa_func, insert as sa_insert
 from sqlalchemy.exc import IntegrityError
 
 from bot.database.models import User, ItemValues, Goods, Categories, Payments, Role
-from bot.database.models.main import PromoCodes, CartItems, Reviews, StockSubscriptions, promo_scope_for
+from bot.database.models.main import PromoCodes, CartItems, Reviews, StockSubscriptions, CatalogMedia, promo_scope_for
 from bot.database import Database
 from bot.database.methods.cache_utils import safe_create_task
 from bot.database.methods.read import invalidate_stats_cache, invalidate_item_cache, invalidate_category_cache
@@ -185,6 +185,29 @@ async def create_category(category_name: str) -> None:
     safe_create_task(invalidate_stats_cache())
     # Drops the cached categories:count
     safe_create_task(invalidate_category_cache(category_name))
+
+
+async def add_catalog_media(owner_type: str, owner_name: str, media_type: str, file_id: str) -> bool:
+    """Attach a Telegram file_id to a category or position, without re-uploading it."""
+    if owner_type not in {"category", "item"} or media_type not in {"photo", "video"} or not file_id:
+        return False
+    async with Database().session() as s:
+        if owner_type == "category":
+            owner_id = (await s.execute(select(Categories.id).where(Categories.name == owner_name))).scalar()
+            owner_clause = CatalogMedia.category_id == owner_id
+            owner_values = {"category_id": owner_id}
+        else:
+            owner_id = (await s.execute(select(Goods.id).where(Goods.name == owner_name))).scalar()
+            owner_clause = CatalogMedia.item_id == owner_id
+            owner_values = {"item_id": owner_id}
+        if not owner_id or (await s.execute(select(exists().where(
+            owner_clause, CatalogMedia.file_id == file_id)))).scalar():
+            return False
+        position = (await s.execute(
+            select(sa_func.coalesce(sa_func.max(CatalogMedia.position), -1)).where(owner_clause)
+        )).scalar_one() + 1
+        s.add(CatalogMedia(**owner_values, media_type=media_type, file_id=file_id, position=position))
+    return True
 
 
 async def create_pending_payment(provider: str, external_id: str, user_id: int, amount: int, currency: str) -> None:
