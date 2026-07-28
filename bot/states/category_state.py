@@ -12,3 +12,5 @@ class CategoryFSM(StatesGroup):
     waiting_delete_category = State()
     waiting_update_category = State()
     waiting_update_category_name = State()
+    waiting_media_owner = State()
+    waiting_media_files = State()
