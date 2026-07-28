@@ -211,6 +211,20 @@ async def get_item_info(item_name: str) -> dict | None:
     return await _fetch_one_dict(Goods, Goods.name == item_name)
 
 
+async def get_all_category_names() -> list[str]:
+    """Return all category names for admin selection keyboards."""
+    async with Database().session() as s:
+        result = await s.execute(select(Categories.name).order_by(Categories.name.asc()))
+        return list(result.scalars().all())
+
+
+async def get_all_item_names() -> list[str]:
+    """Return all position names for admin selection keyboards."""
+    async with Database().session() as s:
+        result = await s.execute(select(Goods.name).order_by(Goods.name.asc()))
+        return list(result.scalars().all())
+
+
 async def get_items_info(item_names: list[str]) -> dict[str, dict]:
     """Return {name: item_row_dict} for the given names in a single query."""
     names = [n for n in dict.fromkeys(item_names)]  # dedupe, preserve order

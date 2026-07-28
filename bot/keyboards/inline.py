@@ -79,6 +79,20 @@ def simple_buttons(buttons: Iterable[Tuple[str, str]], per_row: int = 1) -> Inli
     return kb.as_markup()
 
 
+def choice_buttons(options: Iterable[str], prefix: str, back_cb: str) -> InlineKeyboardMarkup:
+    """Build a compact one-button-per-option selection keyboard.
+
+    The option itself is kept in FSM data; callback data contains only its
+    position, so long/Cyrillic catalog names never exceed Telegram's limit.
+    """
+    kb = InlineKeyboardBuilder()
+    for index, option in enumerate(options):
+        kb.button(text=str(option), callback_data=f"{prefix}{index}")
+    kb.button(text=localize("btn.back"), callback_data=back_cb)
+    kb.adjust(1)
+    return kb.as_markup()
+
+
 def back(cb: str = "menu", text: str | None = None) -> InlineKeyboardMarkup:
     """
     One 'Back' button.

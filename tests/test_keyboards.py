@@ -4,6 +4,7 @@ from bot.keyboards.inline import (
     main_menu, profile_keyboard, simple_buttons, back, close, item_info, payment_menu,
     get_payment_choice, question_buttons, check_sub, referral_system_keyboard,
     admin_console_keyboard, cart_keyboard, rating_keyboard,
+    choice_buttons,
 )
 
 
@@ -190,6 +191,17 @@ class TestSimpleButtons:
         markup = simple_buttons([("A", "a"), ("B", "b"), ("C", "c")])
         total = sum(len(row) for row in markup.inline_keyboard)
         assert total == 3
+
+
+class TestChoiceButtons:
+
+    def test_uses_indexes_in_callback_data(self):
+        markup = choice_buttons(["Категория", "X" * 100], "pick:", "back")
+        assert _all_callback_data(markup) == ["pick:0", "pick:1", "back"]
+
+    def test_displays_option_names(self):
+        markup = choice_buttons(["Первая", "Вторая"], "pick:", "back")
+        assert _all_button_texts(markup)[:2] == ["Первая", "Вторая"]
 
 
 class TestBackAndClose:

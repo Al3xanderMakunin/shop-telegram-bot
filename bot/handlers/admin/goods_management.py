@@ -7,11 +7,11 @@ from aiogram.types import CallbackQuery, Message
 from bot.handlers.other import generate_short_hash, caller_name
 from bot.i18n import localize, esc
 from bot.database.models import Permission
-from bot.database.methods import get_item_info_cached, delete_item, get_goods_info, delete_item_from_position, \
-    query_items_in_position
+from bot.database.methods import (get_item_info_cached, delete_item, get_goods_info, delete_item_from_position,
+                                  query_items_in_position, get_all_item_names)
 from bot.database.methods.read import invalidate_item_cache
 from bot.database.methods.cache_utils import safe_create_task
-from bot.keyboards.inline import back, simple_buttons, lazy_paginated_keyboard
+from bot.keyboards.inline import back, simple_buttons, lazy_paginated_keyboard, choice_buttons
 from bot.database.methods.audit import log_audit
 from bot.filters import HasPermissionFilter
 from bot.misc import EnvKeys, LazyPaginator
@@ -44,9 +44,33 @@ async def delete_item_callback_handler(call: CallbackQuery, state):
     """
     Requests a position name to delete.
     """
-    await call.message.edit_text(localize('admin.goods.delete.prompt.name'), reply_markup=back("goods_management"))
+    items = await get_all_item_names()
+    if not items:
+        await call.message.edit_text(localize('admin.goods.delete.position.not_found'),
+                                     reply_markup=back("goods_management"))
+        await state.set_state(GoodsFSM.waiting_item_name_delete)
+        return
+    await state.update_data(item_options=items)
+    await call.message.edit_text(localize('admin.goods.delete.prompt.name'),
+                                 reply_markup=choice_buttons(items, "goods_delete:", "goods_management"))
     await state.set_state(GoodsFSM.waiting_item_name_delete)
 
+
+@router.callback_query(F.data.startswith("goods_delete:"), GoodsFSM.waiting_item_name_delete,
+                       HasPermissionFilter(permission=Permission.CATALOG_MANAGE))
+async def delete_item_by_button(call: CallbackQuery, state):
+    data = await state.get_data()
+    try:
+        item_name = data["item_options"][int(call.data.split(":")[1])]
+    except (KeyError, ValueError, IndexError, TypeError):
+        await call.answer(localize("errors.invalid_data"), show_alert=True)
+        return
+    await delete_item(item_name)
+    await call.message.edit_text(localize('admin.goods.delete.position.success'),
+                                  reply_markup=back('goods_management'))
+    await log_audit("delete_item", user_id=call.from_user.id, resource_type="Item",
+                    resource_id=item_name, details=f"admin={caller_name(call)}")
+    await state.clear()
 
 @router.message(GoodsFSM.waiting_item_name_delete, F.text)
 async def delete_str_item(message: Message, state):
@@ -77,9 +101,54 @@ async def show_items_callback_handler(call: CallbackQuery, state):
     """
     Requests a position name to show its items.
     """
-    await call.message.edit_text(localize('admin.goods.prompt.enter_item_name'), reply_markup=back("goods_management"))
+    items = await get_all_item_names()
+    if not items:
+        await call.message.edit_text(localize('admin.goods.position.not_found'),
+                                     reply_markup=back("goods_management"))
+        await state.set_state(GoodsFSM.waiting_item_name_show)
+        return
+    await state.update_data(item_options=items)
+    await call.message.edit_text(localize('admin.goods.prompt.enter_item_name'),
+                                 reply_markup=choice_buttons(items, "goods_show:", "goods_management"))
     await state.set_state(GoodsFSM.waiting_item_name_show)
 
+
+@router.callback_query(F.data.startswith("goods_show:"), GoodsFSM.waiting_item_name_show,
+                       HasPermissionFilter(permission=Permission.CATALOG_MANAGE))
+async def show_item_by_button(call: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    try:
+        item_name = data["item_options"][int(call.data.split(":")[1])]
+    except (KeyError, ValueError, IndexError, TypeError):
+        await call.answer(localize("errors.invalid_data"), show_alert=True)
+        return
+    await _show_item_values(call.message, state, item_name)
+
+
+async def _show_item_values(message, state: FSMContext, item_name: str):
+    """Render stock list for a position selected from a button."""
+    item = await get_item_info_cached(item_name)
+    if not item:
+        await message.edit_text(localize('admin.goods.position.not_found'),
+                                reply_markup=back('goods_management'))
+        await state.clear()
+        return
+    query_func = partial(query_items_in_position, item_name)
+    paginator = LazyPaginator(query_func, per_page=10)
+    total = await paginator.get_total_count()
+    if total == 0:
+        await message.edit_text(localize('admin.goods.list_in_position.empty'),
+                                reply_markup=back('goods_management'))
+        await state.clear()
+        return
+    item_hash = generate_short_hash(item_name)
+    await state.update_data(item_hash_mapping={item_hash: item_name}, current_position_name=item_name)
+    markup = await lazy_paginated_keyboard(
+        paginator=paginator, item_text=lambda g: str(g),
+        item_callback=lambda g: f"si_{g}_{item_hash}_0", page=0,
+        back_cb="goods_management", nav_cb_prefix=f"gip_{item_hash}_"
+    )
+    await message.edit_text(localize('admin.goods.list_in_position.title'), reply_markup=markup)
 
 @router.message(GoodsFSM.waiting_item_name_show, F.text)
 async def show_str_item(message: Message, state: FSMContext):

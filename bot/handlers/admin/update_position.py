@@ -4,13 +4,13 @@ from aiogram.types import CallbackQuery, Message
 
 from bot.database.models import Permission
 from bot.database.methods import get_item_info_cached, update_item, check_value, \
-    get_category_name_by_id
+    get_category_name_by_id, get_all_item_names
 from bot.database.methods.create import add_values_bulk, normalize_values
 from bot.database.methods.transactions import replace_item_stock_and_meta
 from bot.handlers.other import _parse_channel_username, is_safe_item_name, caller_name
 from bot.handlers.admin._common import _notify_restock_safe, parse_price
 
-from bot.keyboards.inline import back, question_buttons, simple_buttons
+from bot.keyboards.inline import back, question_buttons, simple_buttons, choice_buttons
 from bot.database.methods.audit import log_audit
 from bot.filters import HasPermissionFilter
 from bot.misc import EnvKeys
@@ -39,12 +39,36 @@ async def _show_update_item_error(send, error_code) -> None:
 @router.callback_query(F.data == 'update_item_amount', HasPermissionFilter(permission=Permission.CATALOG_MANAGE))
 async def update_item_amount_callback_handler(call: CallbackQuery, state):
     """Starts the flow for adding values (stock) to an existing item."""
+    items = await get_all_item_names()
+    await state.update_data(item_options=items)
     await call.message.edit_text(
         localize('admin.goods.update.amount.prompt.name'),
-        reply_markup=back("goods_management")
+        reply_markup=choice_buttons(items, "goods_amount:", "goods_management")
+        if items else back("goods_management")
     )
     await state.set_state(UpdateItemFSM.waiting_item_name_for_amount_upd)
 
+
+@router.callback_query(F.data.startswith("goods_amount:"), UpdateItemFSM.waiting_item_name_for_amount_upd,
+                       HasPermissionFilter(permission=Permission.CATALOG_MANAGE))
+async def select_item_for_amount_update(call: CallbackQuery, state):
+    data = await state.get_data()
+    try:
+        item_name = data["item_options"][int(call.data.split(":")[1])]
+    except (KeyError, ValueError, IndexError, TypeError):
+        await call.answer(localize("errors.invalid_data"), show_alert=True)
+        return
+    item = await get_item_info_cached(item_name)
+    if not item:
+        await call.answer(localize('admin.goods.update.amount.not_exists'), show_alert=True)
+        return
+    if await check_value(item_name):
+        await call.answer(localize('admin.goods.update.amount.infinity_forbidden'), show_alert=True)
+        return
+    await state.update_data(item_name=item_name)
+    await call.message.edit_text(localize('admin.goods.add.values.prompt_multi'),
+                                 reply_markup=back("goods_management"))
+    await state.set_state(UpdateItemFSM.waiting_item_values_upd)
 
 @router.message(UpdateItemFSM.waiting_item_name_for_amount_upd, F.text)
 async def check_item_name_for_amount_upd(message: Message, state):
@@ -155,9 +179,34 @@ async def updating_item_amount(call: CallbackQuery, state):
 @router.callback_query(F.data == 'update_item', HasPermissionFilter(permission=Permission.CATALOG_MANAGE))
 async def update_item_callback_handler(call: CallbackQuery, state):
     """Starts the full update flow."""
-    await call.message.edit_text(localize('admin.goods.update.prompt.name'), reply_markup=back("goods_management"))
+    items = await get_all_item_names()
+    await state.update_data(item_options=items)
+    await call.message.edit_text(
+        localize('admin.goods.update.prompt.name'),
+        reply_markup=choice_buttons(items, "goods_update:", "goods_management")
+        if items else back("goods_management")
+    )
     await state.set_state(UpdateItemFSM.waiting_item_name_for_update)
 
+
+@router.callback_query(F.data.startswith("goods_update:"), UpdateItemFSM.waiting_item_name_for_update,
+                       HasPermissionFilter(permission=Permission.CATALOG_MANAGE))
+async def select_item_for_update(call: CallbackQuery, state):
+    data = await state.get_data()
+    try:
+        item_name = data["item_options"][int(call.data.split(":")[1])]
+    except (KeyError, ValueError, IndexError, TypeError):
+        await call.answer(localize("errors.invalid_data"), show_alert=True)
+        return
+    item = await get_item_info_cached(item_name)
+    if not item:
+        await call.answer(localize('admin.goods.update.not_exists'), show_alert=True)
+        return
+    category_name = await get_category_name_by_id(item['category_id'])
+    await state.update_data(item_old_name=item_name, item_category=category_name)
+    await call.message.edit_text(localize('admin.goods.update.prompt.new_name'),
+                                 reply_markup=back('goods_management'))
+    await state.set_state(UpdateItemFSM.waiting_item_new_name)
 
 @router.message(UpdateItemFSM.waiting_item_name_for_update, F.text)
 async def check_item_name_for_update(message: Message, state):

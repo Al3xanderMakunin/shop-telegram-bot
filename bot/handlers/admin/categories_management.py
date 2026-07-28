@@ -4,8 +4,9 @@ from aiogram.types import CallbackQuery, Message
 from bot.i18n import localize, esc
 from bot.handlers.other import caller_name
 from bot.database.models import Permission
-from bot.database.methods import check_category_cached, create_category, delete_category, update_category
-from bot.keyboards.inline import back, simple_buttons
+from bot.database.methods import (check_category_cached, create_category, delete_category,
+                                  update_category, get_all_category_names)
+from bot.keyboards.inline import back, simple_buttons, choice_buttons
 from bot.filters import HasPermissionFilter
 from bot.database.methods.audit import log_audit
 from bot.misc import CategoryRequest
@@ -83,11 +84,33 @@ async def delete_category_callback_handler(call: CallbackQuery, state):
     """
     Asks admin for a category name to delete.
     """
-    await call.message.edit_text(
-        localize("admin.categories.prompt.delete"),
-        reply_markup=back("categories_management"),
-    )
+    categories = await get_all_category_names()
+    if not categories:
+        await call.message.edit_text(localize("admin.categories.delete.not_found"),
+                                     reply_markup=back("categories_management"))
+        await state.set_state(CategoryFSM.waiting_delete_category)
+        return
+    await state.update_data(category_options=categories)
+    await call.message.edit_text(localize("admin.categories.prompt.delete"),
+                                 reply_markup=choice_buttons(categories, "cat_delete:", "categories_management"))
     await state.set_state(CategoryFSM.waiting_delete_category)
+
+
+@router.callback_query(F.data.startswith("cat_delete:"), CategoryFSM.waiting_delete_category,
+                       HasPermissionFilter(permission=Permission.CATALOG_MANAGE))
+async def delete_category_by_button(call: CallbackQuery, state):
+    data = await state.get_data()
+    try:
+        category_name = data["category_options"][int(call.data.split(":")[1])]
+    except (KeyError, ValueError, IndexError, TypeError):
+        await call.answer(localize("errors.invalid_data"), show_alert=True)
+        return
+    await delete_category(category_name)
+    await call.message.edit_text(localize("admin.categories.delete.success"),
+                                 reply_markup=back("categories_management"))
+    await log_audit("delete_category", user_id=call.from_user.id, resource_type="Category",
+                    resource_id=category_name, details=f"admin={caller_name(call)}")
+    await state.clear()
 
 
 # --- Handle category deletion
@@ -121,11 +144,31 @@ async def update_category_callback_handler(call: CallbackQuery, state):
     """
     Asks admin for current category name before renaming.
     """
-    await call.message.edit_text(
-        localize("admin.categories.prompt.rename.old"),
-        reply_markup=back("categories_management"),
-    )
+    categories = await get_all_category_names()
+    if not categories:
+        await call.message.edit_text(localize("admin.categories.rename.not_found"),
+                                     reply_markup=back("categories_management"))
+        await state.set_state(CategoryFSM.waiting_update_category)
+        return
+    await state.update_data(category_options=categories)
+    await call.message.edit_text(localize("admin.categories.prompt.rename.old"),
+                                 reply_markup=choice_buttons(categories, "cat_rename:", "categories_management"))
     await state.set_state(CategoryFSM.waiting_update_category)
+
+
+@router.callback_query(F.data.startswith("cat_rename:"), CategoryFSM.waiting_update_category,
+                       HasPermissionFilter(permission=Permission.CATALOG_MANAGE))
+async def select_category_for_update(call: CallbackQuery, state):
+    data = await state.get_data()
+    try:
+        old_name = data["category_options"][int(call.data.split(":")[1])]
+    except (KeyError, ValueError, IndexError, TypeError):
+        await call.answer(localize("errors.invalid_data"), show_alert=True)
+        return
+    await state.update_data(old_category=old_name)
+    await call.message.edit_text(localize("admin.categories.prompt.rename.new"),
+                                 reply_markup=back("categories_management"))
+    await state.set_state(CategoryFSM.waiting_update_category_name)
 
 
 @router.message(CategoryFSM.waiting_update_category, F.text)

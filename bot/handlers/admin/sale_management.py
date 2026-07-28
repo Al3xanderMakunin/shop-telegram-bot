@@ -5,11 +5,11 @@ from aiogram import Router, F
 from aiogram.types import CallbackQuery, Message
 
 from bot.database.models import Permission
-from bot.database.methods import get_item_info_cached
+from bot.database.methods import get_item_info_cached, get_all_item_names
 from bot.database.methods.update import set_item_sale
 from bot.database.methods.pricing import effective_price, coerce_sale_until
 from bot.database.methods.audit import log_audit
-from bot.keyboards.inline import back
+from bot.keyboards.inline import back, choice_buttons
 from bot.filters import HasPermissionFilter
 from bot.i18n import localize, esc
 from bot.handlers.other import caller_name
@@ -28,9 +28,45 @@ def _fmt_percent(value) -> str:
 @router.callback_query(F.data == 'manage_sale', HasPermissionFilter(permission=Permission.CATALOG_MANAGE))
 async def manage_sale_callback_handler(call: CallbackQuery, state):
     """Start the sale management flow: ask for the item name."""
-    await call.message.edit_text(localize('admin.sale.prompt.name'), reply_markup=back('goods_management'))
+    items = await get_all_item_names()
+    await state.update_data(item_options=items)
+    await call.message.edit_text(
+        localize('admin.sale.prompt.name'),
+        reply_markup=choice_buttons(items, "sale_item:", "goods_management")
+        if items else back('goods_management'),
+    )
     await state.set_state(SaleFSM.waiting_item_name)
 
+
+@router.callback_query(F.data.startswith("sale_item:"), SaleFSM.waiting_item_name,
+                       HasPermissionFilter(permission=Permission.CATALOG_MANAGE))
+async def select_sale_item(call: CallbackQuery, state):
+    data = await state.get_data()
+    try:
+        item_name = data["item_options"][int(call.data.split(":")[1])]
+    except (KeyError, ValueError, IndexError, TypeError):
+        await call.answer(localize("errors.invalid_data"), show_alert=True)
+        return
+    await _show_sale_status(call.message, state, item_name)
+
+
+async def _show_sale_status(message, state, item_name: str):
+    item = await get_item_info_cached(item_name)
+    if not item:
+        await message.edit_text(localize('admin.sale.not_found'), reply_markup=back('goods_management'))
+        return
+    _final, on_sale, _original = effective_price(item)
+    if on_sale:
+        until = coerce_sale_until(item.get('sale_until'))
+        until_str = until.strftime('%Y-%m-%d %H:%M') if until else '-'
+        status = localize('admin.sale.current.active',
+                          percent=_fmt_percent(item.get('sale_percent')), until=until_str)
+    else:
+        status = localize('admin.sale.current.none')
+    await state.update_data(sale_item_name=item_name)
+    await message.edit_text(f"{status}\n\n{localize('admin.sale.prompt.percent')}",
+                            parse_mode='HTML', reply_markup=back('goods_management'))
+    await state.set_state(SaleFSM.waiting_percent)
 
 @router.message(SaleFSM.waiting_item_name, F.text)
 async def sale_item_name(message: Message, state):

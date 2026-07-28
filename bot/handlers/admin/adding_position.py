@@ -4,12 +4,13 @@ from aiogram.types import CallbackQuery, Message
 
 from bot.database.models import Permission
 from bot.database.methods import (
-    check_category_cached, get_item_info_cached, create_item, add_values_to_item
+    check_category_cached, get_item_info_cached, create_item, add_values_to_item,
+    get_all_category_names
 )
 from bot.database.methods.create import add_values_bulk
 from bot.handlers.other import _parse_channel_username, is_safe_item_name, caller_name
 from bot.handlers.admin._common import _notify_restock_safe, parse_price
-from bot.keyboards.inline import back, question_buttons, simple_buttons
+from bot.keyboards.inline import back, question_buttons, simple_buttons, choice_buttons
 from bot.database.methods.audit import log_audit
 from bot.filters import HasPermissionFilter
 from bot.misc import EnvKeys
@@ -75,8 +76,32 @@ async def add_item_price(message: Message, state):
         return
 
     await state.update_data(item_price=price)
-    await message.answer(localize('admin.goods.add.prompt.category'), reply_markup=back('goods_management'))
+    categories = await get_all_category_names()
+    if not categories:
+        await message.answer(localize('admin.goods.add.category.not_found'),
+                             reply_markup=back('goods_management'))
+        await state.set_state(AddItemFSM.waiting_category)
+        return
+    await state.update_data(category_options=categories)
+    await message.answer(localize('admin.goods.add.prompt.category'),
+                         reply_markup=choice_buttons(categories, "add_category:", "goods_management"))
     await state.set_state(AddItemFSM.waiting_category)
+
+
+@router.callback_query(F.data.startswith("add_category:"), AddItemFSM.waiting_category)
+async def select_category_for_add_item(call: CallbackQuery, state):
+    data = await state.get_data()
+    try:
+        category_name = data["category_options"][int(call.data.split(":")[1])]
+    except (KeyError, ValueError, IndexError, TypeError):
+        await call.answer(localize("errors.invalid_data"), show_alert=True)
+        return
+    await state.update_data(item_category=category_name)
+    await call.message.edit_text(
+        localize('admin.goods.add.infinity.question'),
+        reply_markup=question_buttons('infinity', 'goods_management')
+    )
+    await state.set_state(AddItemFSM.waiting_infinity)
 
 
 @router.message(AddItemFSM.waiting_category, F.text)
