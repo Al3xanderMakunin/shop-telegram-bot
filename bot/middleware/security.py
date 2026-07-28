@@ -156,6 +156,12 @@ class AuthenticationMiddleware(BaseMiddleware):
             from bot.database.methods.cache_utils import safe_create_task
             safe_create_task(cache.set("bot:maintenance_mode", value, ttl=86400 * 30))
 
+    async def set_maintenance_mode(self, value: bool) -> None:
+        """Persist a new mode before exposing it to update handlers."""
+        from bot.database.methods.settings import set_maintenance_mode
+        await set_maintenance_mode(value)
+        self.maintenance_mode = value
+
     async def __call__(
             self,
             handler: Callable[[TelegramObject, Dict[str, Any]], Awaitable[Any]],
@@ -240,14 +246,31 @@ class AuthenticationMiddleware(BaseMiddleware):
         """Load blocked users from DB into memory cache on startup."""
         await self._load_blocked_set()
 
-        # Restore maintenance mode from Redis
+        # The database is the source of truth; Redis is only a best-effort cache.
+        maintenance_loaded = False
+        try:
+            from bot.database.methods.settings import get_maintenance_mode
+            self._maintenance_mode = await get_maintenance_mode()
+            maintenance_loaded = True
+        except Exception:
+            # Keep startup resilient if the settings table is temporarily unavailable.
+            pass
+
+        # Refresh the cache after the database read.
         from bot.misc.caching import get_cache_manager
         cache = get_cache_manager()
         if cache:
             try:
-                val = await cache.get("bot:maintenance_mode")
-                if val is not None:
-                    self._maintenance_mode = bool(val)
+                if maintenance_loaded:
+                    await cache.set(
+                        "bot:maintenance_mode",
+                        self._maintenance_mode,
+                        ttl=86400 * 30,
+                    )
+                else:
+                    cached = await cache.get("bot:maintenance_mode")
+                    if cached is not None:
+                        self._maintenance_mode = bool(cached)
             except Exception:
                 pass
 

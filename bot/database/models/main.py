@@ -38,6 +38,16 @@ class Permission:
         return (perms & bit) == bit
 
 
+class BotSettings(Database.BASE):
+    """Persistent singleton row for process-wide bot settings."""
+
+    __tablename__ = 'bot_settings'
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    maintenance_mode: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default='false'
+    )
+
+
 class Role(Database.BASE):
     __tablename__ = 'roles'
     id: Mapped[int] = mapped_column(Integer, primary_key=True)

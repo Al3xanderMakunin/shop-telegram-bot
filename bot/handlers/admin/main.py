@@ -42,7 +42,8 @@ async def toggle_maintenance_handler(call: CallbackQuery):
     if not mw:
         return
 
-    mw.maintenance_mode = not mw.maintenance_mode
+    new_state = not mw.maintenance_mode
+    await mw.set_maintenance_mode(new_state)
     state_str = "ON" if mw.maintenance_mode else "OFF"
     await log_audit(
         "toggle_maintenance",
