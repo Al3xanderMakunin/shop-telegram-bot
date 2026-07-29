@@ -4,6 +4,42 @@ from bot.database import Database
 from bot.database.models import BotSettings
 
 
+async def get_paypear_settings() -> dict:
+    """Return PayPear credentials and checkout settings from the admin-managed row."""
+    async with Database().session() as s:
+        row = (await s.execute(
+            select(
+                BotSettings.paypear_enabled,
+                BotSettings.paypear_shop_id,
+                BotSettings.paypear_secret_key,
+                BotSettings.paypear_payment_method,
+                BotSettings.paypear_return_url,
+            ).where(BotSettings.id == 1)
+        )).one_or_none()
+        if row is None:
+            return {
+                "enabled": False, "shop_id": None, "secret_key": None,
+                "payment_method": "sbp", "return_url": None,
+            }
+        return {
+            "enabled": bool(row.paypear_enabled),
+            "shop_id": row.paypear_shop_id,
+            "secret_key": row.paypear_secret_key,
+            "payment_method": row.paypear_payment_method or "sbp",
+            "return_url": row.paypear_return_url,
+        }
+
+
+async def is_paypear_configured() -> bool:
+    settings = await get_paypear_settings()
+    return bool(
+        settings["enabled"]
+        and settings["shop_id"]
+        and settings["secret_key"]
+        and settings["return_url"]
+    )
+
+
 async def get_maintenance_mode() -> bool:
     """Read the persisted maintenance-mode flag."""
     async with Database().session() as s:

@@ -141,7 +141,7 @@ def _safe_model_repr(model: Any, max_len: int = 500) -> str:
     _sensitive = {"balance", "password", "secret", "token", "value"}
     parts = []
     for col in getattr(model, "__table__", None).columns if hasattr(model, "__table__") else ():
-        if col.name in _sensitive:
+        if any(marker in col.name.lower() for marker in _sensitive):
             continue
         val = getattr(model, col.name, None)
         parts.append(f"{col.name}={val!r}")
@@ -406,11 +406,20 @@ class BotSettingsAdmin(AuditModelView, model=BotSettings):
         BotSettings.maintenance_mode,
         BotSettings.topup_notification_chat_id,
         BotSettings.topup_notification_thread_id,
+        BotSettings.paypear_enabled,
+        BotSettings.paypear_shop_id,
+        BotSettings.paypear_payment_method,
+        BotSettings.paypear_return_url,
     ]
     form_columns = [
         BotSettings.maintenance_mode,
         BotSettings.topup_notification_chat_id,
         BotSettings.topup_notification_thread_id,
+        BotSettings.paypear_enabled,
+        BotSettings.paypear_shop_id,
+        BotSettings.paypear_secret_key,
+        BotSettings.paypear_payment_method,
+        BotSettings.paypear_return_url,
     ]
     form_args = {
         "topup_notification_chat_id": {
@@ -424,6 +433,18 @@ class BotSettingsAdmin(AuditModelView, model=BotSettings):
                 "Optional topic/thread ID (message_thread_id) inside a forum group. "
                 "Leave empty to post to the chat's general topic."
             ),
+        },
+        "paypear_shop_id": {
+            "description": "Shop ID from the PayPear personal account.",
+        },
+        "paypear_secret_key": {
+            "description": "Secret API key from PayPear. Keep this value private.",
+        },
+        "paypear_payment_method": {
+            "description": "PayPear payment method type. Use sbp unless another method is enabled for the shop.",
+        },
+        "paypear_return_url": {
+            "description": "Absolute URL to which PayPear returns the customer after payment.",
         },
     }
     can_create = False
@@ -451,6 +472,22 @@ class BotSettingsAdmin(AuditModelView, model=BotSettings):
             raise ValueError("Set the notification chat ID before setting a topic/thread ID.")
         data["topup_notification_chat_id"] = chat_id
         data["topup_notification_thread_id"] = thread_id
+        for field in ("paypear_shop_id", "paypear_secret_key", "paypear_return_url"):
+            if data.get(field) is not None:
+                data[field] = str(data[field]).strip() or None
+        data["paypear_payment_method"] = (
+            str(data.get("paypear_payment_method") or "sbp").strip().lower()
+        )
+        if data.get("paypear_enabled") and not all(
+            data.get(field)
+            for field in ("paypear_shop_id", "paypear_secret_key", "paypear_return_url")
+        ):
+            raise ValueError(
+                "PayPear requires Shop ID, Secret key and Return URL before it can be enabled."
+            )
+        return_url = data.get("paypear_return_url")
+        if return_url and not return_url.startswith(("https://", "http://")):
+            raise ValueError("PayPear Return URL must be an absolute HTTP(S) URL.")
 
 
 class ReferralEarningsAdmin(ModelView, model=ReferralEarnings):

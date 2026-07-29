@@ -7,7 +7,10 @@ from aiogram.types import CallbackQuery, Message, PreCheckoutQuery, SuccessfulPa
 from aiogram.fsm.context import FSMContext
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 
-from bot.database.methods import get_user_referral, buy_item_transaction, process_payment_with_referral, create_pending_payment
+from bot.database.methods import (
+    get_user_referral, buy_item_transaction, process_payment_with_referral,
+    create_pending_payment, get_paypear_settings, is_paypear_configured,
+)
 from bot.keyboards import back, payment_menu, close, get_payment_choice
 from bot.logger_mesh import logger
 from bot.database.methods.audit import log_audit
@@ -20,6 +23,8 @@ from bot.misc.services import (
     CryptoPayAPIError,
     send_stars_invoice,
     send_fiat_invoice,
+    PayPearAPI,
+    PayPearAPIError,
 )
 from bot.misc.services.topup_notifier import notify_balance_topup
 from bot.misc.services.payment import _minor_units_for, payload_amount
@@ -53,7 +58,7 @@ async def _notify_referrer_bonus(bot, user_id: int, amount: Decimal | int, payer
 @router.callback_query(F.data == "replenish_balance")
 async def replenish_balance_callback_handler(call: CallbackQuery, state: FSMContext):
     """Ask user for the amount if at least one payment method is enabled."""
-    if not _any_payment_method_enabled():
+    if not _any_payment_method_enabled() and not await is_paypear_configured():
         await call.answer(localize("payments.not_configured"), show_alert=True)
         return
 
@@ -109,7 +114,7 @@ async def invalid_amount(message: Message, state: FSMContext):
 
 @router.callback_query(
     BalanceStates.waiting_payment,
-    F.data.in_(["pay_cryptopay", "pay_stars", "pay_fiat"])
+    F.data.in_(["pay_cryptopay", "pay_paypear", "pay_stars", "pay_fiat"])
 )
 async def process_replenish_balance(call: CallbackQuery, state: FSMContext):
     """Create an invoice for the chosen payment method."""
@@ -125,6 +130,7 @@ async def process_replenish_balance(call: CallbackQuery, state: FSMContext):
     # Map callback data to provider
     provider_map = {
         "pay_cryptopay": "cryptopay",
+        "pay_paypear": "paypear",
         "pay_stars": "stars",
         "pay_fiat": "fiat"
     }
@@ -184,6 +190,63 @@ async def process_replenish_balance(call: CallbackQuery, state: FSMContext):
                          button=localize("btn.check_payment"),
                          currency=payment_request.currency),
                 reply_markup=payment_menu(pay_url)
+            )
+
+        elif call.data == "pay_paypear":
+            settings = await get_paypear_settings()
+            if not (
+                settings["enabled"] and settings["shop_id"]
+                and settings["secret_key"] and settings["return_url"]
+            ):
+                await call.answer(localize("payments.not_configured"), show_alert=True)
+                return
+            try:
+                paypear = PayPearAPI(settings["shop_id"], settings["secret_key"])
+                payment = await paypear.create_payment(
+                    amount=amount_dec,
+                    currency=payment_request.currency,
+                    return_url=settings["return_url"],
+                    payment_method=settings["payment_method"],
+                    expires_in=ttl_seconds,
+                    description=f"Balance top-up for Telegram user {call.from_user.id}",
+                    metadata={"telegram_user_id": str(call.from_user.id)},
+                )
+            except PayPearAPIError as e:
+                await log_audit(
+                    "paypear_invoice_fail", level="ERROR",
+                    user_id=call.from_user.id, resource_type="Payment", details=str(e),
+                )
+                await call.answer(
+                    localize("payments.paypear.create_fail", error=e.message),
+                    show_alert=True,
+                )
+                return
+
+            payment_id = payment.get("id")
+            pay_url = (payment.get("confirmation") or {}).get("confirmation_url")
+            if not payment_id or not pay_url:
+                await call.answer(
+                    localize("payments.paypear.create_fail", error="invalid API response"),
+                    show_alert=True,
+                )
+                return
+            await create_pending_payment(
+                provider="paypear",
+                external_id=str(payment_id),
+                user_id=call.from_user.id,
+                amount=int(amount_dec),
+                currency=payment_request.currency,
+            )
+            await state.update_data(invoice_id=payment_id, payment_type="paypear")
+            await call.message.edit_text(
+                localize(
+                    "payments.invoice.summary",
+                    amount=int(amount_dec),
+                    minutes=int(ttl_seconds / 60),
+                    button=localize("btn.check_payment"),
+                    currency=payment_request.currency,
+                ),
+                reply_markup=payment_menu(pay_url),
             )
 
         elif call.data == "pay_stars":
@@ -312,6 +375,82 @@ async def checking_payment(call: CallbackQuery, state: FSMContext):
             ))
 
         elif status == "active":
+            await call.answer(localize("payments.not_paid_yet"))
+        else:
+            await call.answer(localize("payments.expired"), show_alert=True)
+
+    elif payment_type == "paypear":
+        payment_id = data.get("invoice_id")
+        if not payment_id:
+            await call.answer(localize("payments.invoice_not_found"), show_alert=True)
+            await state.clear()
+            return
+        settings = await get_paypear_settings()
+        if not settings["shop_id"] or not settings["secret_key"]:
+            await call.answer(localize("payments.not_configured"), show_alert=True)
+            return
+        try:
+            info = await PayPearAPI(
+                settings["shop_id"], settings["secret_key"]
+            ).get_payment(str(payment_id))
+        except PayPearAPIError as e:
+            await log_audit(
+                "paypear_check_fail", level="ERROR", user_id=user_id,
+                resource_type="Payment", details=str(e),
+            )
+            await call.answer(
+                localize("payments.paypear.check_fail", error=e.message),
+                show_alert=True,
+            )
+            return
+
+        status = str(info.get("status", "")).upper()
+        if status == "CONFIRMED" and info.get("paid", True):
+            amount_data = info.get("amount") or {}
+            balance_amount = Decimal(str(amount_data.get("value", "0"))).quantize(
+                Decimal("0.01")
+            )
+            if balance_amount <= 0:
+                await call.answer(localize("payments.unable_determine_amount"), show_alert=True)
+                return
+            success, error_msg = await process_payment_with_referral(
+                user_id=user_id,
+                amount=balance_amount,
+                provider="paypear",
+                external_id=str(payment_id),
+                referral_percent=EnvKeys.REFERRAL_PERCENT,
+            )
+            if not success:
+                key = "payments.already_processed" if error_msg == "already_processed" else "errors.general_error"
+                kwargs = {} if error_msg == "already_processed" else {"e": error_msg}
+                await call.answer(localize(key, **kwargs), show_alert=True)
+                return
+            metrics = get_metrics()
+            if metrics:
+                metrics.track_event("payment", user_id, {"amount": balance_amount, "provider": "paypear"})
+            await _notify_referrer_bonus(
+                call.bot, user_id, balance_amount,
+                call.from_user.first_name, call.from_user.id,
+            )
+            await notify_balance_topup(
+                call.bot, user_id=user_id,
+                user_name=call.from_user.first_name or str(user_id),
+                provider="paypear", external_id=str(payment_id),
+            )
+            await call.message.edit_text(
+                localize(
+                    "payments.topped_simple", amount=balance_amount,
+                    currency=EnvKeys.PAY_CURRENCY,
+                ),
+                reply_markup=back("profile"),
+            )
+            await state.clear()
+            safe_create_task(log_audit(
+                "balance_replenish", user_id=user_id, resource_type="Payment",
+                details=f"name={caller_name(call)}, amount={balance_amount} "
+                        f"{EnvKeys.PAY_CURRENCY}, provider=paypear",
+            ))
+        elif status in {"NEW", "PROCESS"}:
             await call.answer(localize("payments.not_paid_yet"))
         else:
             await call.answer(localize("payments.expired"), show_alert=True)

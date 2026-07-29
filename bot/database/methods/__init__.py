@@ -12,4 +12,6 @@ from bot.database.methods.settings import (
     set_maintenance_mode,
     get_topup_notification_settings,
     set_topup_notification_settings,
+    get_paypear_settings,
+    is_paypear_configured,
 )

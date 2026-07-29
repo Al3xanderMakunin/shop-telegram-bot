@@ -52,6 +52,15 @@ class BotSettings(Database.BASE):
     topup_notification_thread_id: Mapped[Optional[int]] = mapped_column(
         Integer, nullable=True
     )
+    paypear_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default='false'
+    )
+    paypear_shop_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    paypear_secret_key: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    paypear_payment_method: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="sbp", server_default="sbp"
+    )
+    paypear_return_url: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
 
 
 class Role(Database.BASE):

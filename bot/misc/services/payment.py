@@ -1,6 +1,9 @@
 import aiohttp
 import json
 import math
+import uuid
+from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 from typing import Optional
 
 from aiogram import Bot
@@ -124,6 +127,110 @@ class CryptoPayAPIError(Exception):
         self.name = name
         self.message = message or name
         super().__init__(f"CryptoPay API Error [{code}]: {name}")
+
+
+class PayPearAPIError(Exception):
+    """Raised for HTTP and API-level errors returned by PayPear."""
+
+    def __init__(self, message: str, status: int | None = None):
+        self.status = status
+        self.message = message
+        prefix = f"PayPear API error [{status}]" if status else "PayPear API error"
+        super().__init__(f"{prefix}: {message}")
+
+
+class PayPearAPI:
+    """Async client for the PayPear payment API."""
+
+    base_url = "https://api.paypear.ru/v1/payment"
+    _timeout = aiohttp.ClientTimeout(total=30)
+    _session: Optional[aiohttp.ClientSession] = None
+
+    def __init__(self, shop_id: str, secret_key: str):
+        if not shop_id or not secret_key:
+            raise ValueError("PayPear shop ID and secret key are required")
+        self.auth = aiohttp.BasicAuth(str(shop_id), secret_key)
+
+    @classmethod
+    def _get_session(cls) -> aiohttp.ClientSession:
+        if cls._session is None or cls._session.closed:
+            cls._session = aiohttp.ClientSession(timeout=cls._timeout)
+        return cls._session
+
+    @classmethod
+    async def close_session(cls):
+        if cls._session and not cls._session.closed:
+            await cls._session.close()
+            cls._session = None
+
+    async def _request(self, method: str, url: str, **kwargs) -> dict:
+        try:
+            async with self._get_session().request(
+                method, url, auth=self.auth, **kwargs
+            ) as response:
+                try:
+                    data = await response.json()
+                except (aiohttp.ContentTypeError, json.JSONDecodeError):
+                    data = {}
+                if response.status >= 400:
+                    message = (
+                        data.get("message")
+                        or data.get("error")
+                        or f"HTTP {response.status}"
+                    )
+                    raise PayPearAPIError(str(message), response.status)
+        except PayPearAPIError:
+            raise
+        except (aiohttp.ClientError, TimeoutError) as exc:
+            raise PayPearAPIError(str(exc)) from exc
+
+        if not data.get("success", False):
+            message = data.get("message") or data.get("error") or "request failed"
+            raise PayPearAPIError(str(message), response.status)
+        result = data.get("result") or data.get("response")
+        if not isinstance(result, dict):
+            raise PayPearAPIError("invalid API response", response.status)
+        return result
+
+    async def create_payment(
+            self,
+            *,
+            amount: Decimal | int,
+            currency: str,
+            return_url: str,
+            payment_method: str = "sbp",
+            expires_in: int = 1800,
+            order_id: str | None = None,
+            description: str | None = None,
+            metadata: dict[str, str] | None = None,
+    ) -> dict:
+        order_id = order_id or str(uuid.uuid4())
+        expires_at = (
+            datetime.now(timezone.utc) + timedelta(seconds=expires_in)
+        ).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+        payload = {
+            "order_id": order_id,
+            "amount": {
+                "value": f"{Decimal(str(amount)):.2f}",
+                "currency": currency.upper(),
+            },
+            "confirmation": {"type": "redirect", "return_url": return_url},
+            "payment_method_data": {"type": payment_method},
+            "expires_at": expires_at,
+        }
+        if description:
+            payload["description"] = description[:128]
+        if metadata:
+            payload["metadata"] = {str(k): str(v) for k, v in metadata.items()}
+        return await self._request(
+            "POST",
+            f"{self.base_url}/",
+            json=payload,
+            headers={"Idempotency-Key": order_id},
+        )
+
+    async def get_payment(self, payment_id: str) -> dict:
+        return await self._request("GET", f"{self.base_url}/{payment_id}/")
 
 
 class CircuitBreaker:

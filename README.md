@@ -633,3 +633,17 @@ services are mocked (Telegram Bot API, CryptoPay, Redis). What's covered:
 pytest                                          # full suite
 pytest --cov=bot --cov-report=term-missing      # with the coverage report
 ```
+# PayPear
+
+PayPear can be configured without environment variables in the web admin panel.
+Open **Bot Settings**, edit the singleton row (`id=1`) and set:
+
+- **PayPear enabled**;
+- **PayPear shop ID** and **PayPear secret key** from the merchant account;
+- **PayPear payment method** (the default is `sbp`);
+- an absolute **PayPear return URL**.
+
+Run the database migrations before enabling the provider. The bot creates a
+redirect payment, records it as pending, and credits the user's balance only
+after PayPear returns the authoritative `CONFIRMED` status through the payment
+information API. Repeated checks are idempotent.

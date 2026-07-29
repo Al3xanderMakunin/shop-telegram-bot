@@ -21,6 +21,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "btn.pay": "💳 Оплатить",
         "btn.check_payment": "🔄 Проверить оплату",
         "btn.pay.crypto": "💎 CryptoPay",
+        "btn.pay.paypear": "💳 PayPear",
         "btn.pay.stars": "⭐ Telegram Stars",
         "btn.pay.tg": "💸 Telegram Payments",
 
@@ -328,6 +329,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "payments.crypto.create_fail": "❌ Ошибка при создании счёта: {error}",
         "payments.crypto.api_error": "❌ Ошибка CryptoPay API: {error}",
         "payments.crypto.check_fail": "❌ Ошибка проверки платежа: {error}",
+        "payments.paypear.create_fail": "❌ Не удалось создать платёж PayPear: {error}",
+        "payments.paypear.check_fail": "❌ Не удалось проверить платёж PayPear: {error}",
         "payments.stars.create_fail": "❌ Не удалось выставить счёт в Stars: {error}",
         "payments.fiat.create_fail": "❌ Не удалось выставить счёт: {error}",
         "payments.no_active_invoice": "❌ Активных счетов не найдено. Начните пополнение заново.",
@@ -579,6 +582,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "btn.check_payment": "🔄 Check payment",
         "btn.pay": "💳 Pay",
         "btn.pay.crypto": "💎 CryptoPay",
+        "btn.pay.paypear": "💳 PayPear",
         "btn.pay.stars": "⭐ Telegram Stars",
         "btn.pay.tg": "💸 Telegram Payments",
 
@@ -886,6 +890,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "payments.crypto.create_fail": "❌ Failed to create invoice: {error}",
         "payments.crypto.api_error": "❌ CryptoPay API error: {error}",
         "payments.crypto.check_fail": "❌ Payment check failed: {error}",
+        "payments.paypear.create_fail": "❌ Failed to create PayPear payment: {error}",
+        "payments.paypear.check_fail": "❌ Failed to check PayPear payment: {error}",
         "payments.stars.create_fail": "❌ Failed to issue Stars invoice: {error}",
         "payments.fiat.create_fail": "❌ Failed to issue invoice: {error}",
         "payments.no_active_invoice": "❌ No active invoices found. Start top-up again.",

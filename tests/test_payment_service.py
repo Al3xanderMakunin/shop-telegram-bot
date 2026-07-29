@@ -1,5 +1,6 @@
 import pytest
 import math
+from decimal import Decimal
 from unittest.mock import patch, AsyncMock, MagicMock
 
 from bot.misc.services.payment import (
@@ -9,6 +10,8 @@ from bot.misc.services.payment import (
     send_fiat_invoice,
     CryptoPayAPI,
     CryptoPayAPIError,
+    PayPearAPI,
+    PayPearAPIError,
 )
 
 
@@ -137,3 +140,40 @@ class TestCryptoPayAPI:
         err = CryptoPayAPIError(code=401, name="UNAUTHORIZED")
         assert "401" in str(err)
         assert "UNAUTHORIZED" in str(err)
+
+
+class TestPayPearAPI:
+
+    async def test_create_payment_uses_basic_auth_and_idempotency(self):
+        api = PayPearAPI("shop-42", "secret")
+        api._request = AsyncMock(return_value={"id": "payment-id"})
+
+        result = await api.create_payment(
+            amount=Decimal("125.50"),
+            currency="rub",
+            return_url="https://example.com/return",
+            payment_method="sbp",
+            order_id="order-id",
+            metadata={"telegram_user_id": "123"},
+        )
+
+        assert result["id"] == "payment-id"
+        kwargs = api._request.await_args.kwargs
+        assert kwargs["headers"]["Idempotency-Key"] == "order-id"
+        assert kwargs["json"]["order_id"] == "order-id"
+        assert kwargs["json"]["amount"] == {"value": "125.50", "currency": "RUB"}
+        assert kwargs["json"]["payment_method_data"]["type"] == "sbp"
+
+    async def test_get_payment_uses_documented_endpoint(self):
+        api = PayPearAPI("shop-42", "secret")
+        api._request = AsyncMock(return_value={"id": "payment-id", "status": "NEW"})
+
+        await api.get_payment("payment-id")
+
+        api._request.assert_awaited_once_with(
+            "GET", "https://api.paypear.ru/v1/payment/payment-id/"
+        )
+
+    def test_credentials_are_required(self):
+        with pytest.raises(ValueError):
+            PayPearAPI("", "")
