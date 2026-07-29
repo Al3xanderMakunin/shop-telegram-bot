@@ -3,7 +3,7 @@ from decimal import Decimal
 from functools import partial
 
 from aiogram import Router, F
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, Message, InputMediaPhoto, InputMediaVideo
 from aiogram.fsm.context import FSMContext
 from aiogram.exceptions import TelegramBadRequest
 from pydantic import ValidationError
@@ -15,7 +15,7 @@ from bot.database.methods import (
 from bot.database.methods.read import (
     get_item_avg_rating, has_purchased_item, validate_promo_for_item,
     get_user_review, invalidate_rating_cache, is_subscribed_to_stock,
-    check_value_cached,
+    check_value_cached, get_catalog_media,
 )
 from bot.database.methods.pricing import apply_promo_discount
 from bot.database.methods.create import create_review, subscribe_to_stock
@@ -58,7 +58,8 @@ def _page_arg(raw: str) -> int | None:
 
 # --- Shared helper: render item page ---
 
-async def _render_item_page(target, state: FSMContext, item_name: str, back_data: str = None, user_id: int = None):
+async def _render_item_page(target, state: FSMContext, item_name: str, back_data: str = None,
+                            user_id: int = None, send_media: bool = False):
     """
     Render the item detail page with optional promo discount.
     `target` can be CallbackQuery or Message.
@@ -156,14 +157,89 @@ async def _render_item_page(target, state: FSMContext, item_name: str, back_data
 
     text = "\n".join(text_lines)
 
+    card_media = data.get("item_card_media")
     try:
-        if hasattr(target, 'message') and hasattr(target.message, 'edit_text'):
+        if isinstance(target, CallbackQuery) and card_media and not send_media:
+            # The card is the first message in the album, so its text belongs in
+            # the caption instead of becoming a separate message below the media.
+            await target.message.edit_caption(
+                caption=text, reply_markup=markup, parse_mode="HTML",
+            )
+        elif card_media:
+            chat_id = target.from_user.id if isinstance(target, CallbackQuery) else target.chat.id
+            sent = await _send_item_card_media(target.bot, chat_id, card_media, text, markup)
+            await state.update_data(item_card_media_ids=[message.message_id for message in sent])
+        elif hasattr(target, 'message') and hasattr(target.message, 'edit_text'):
             await target.message.edit_text(text, reply_markup=markup)
         else:
             await target.answer(text, reply_markup=markup)
     except TelegramBadRequest as e:
         if "message is not modified" not in str(e):
             raise
+
+
+async def _send_item_card_media(bot, chat_id: int, media: list[dict], text: str, markup):
+    """Send the product card as an album with its details in the first caption."""
+    if len(media) == 1:
+        entry = media[0]
+        send = bot.send_photo if entry["media_type"] == "photo" else bot.send_video
+        message = await send(
+            chat_id=chat_id, **{entry["media_type"]: entry["file_id"]},
+            caption=text, parse_mode="HTML", reply_markup=markup,
+        )
+        return [message]
+
+    payload = []
+    for index, entry in enumerate(media):
+        common = {"media": entry["file_id"]}
+        if index == 0:
+            common.update(caption=text, parse_mode="HTML")
+        payload.append(
+            InputMediaPhoto(**common) if entry["media_type"] == "photo"
+            else InputMediaVideo(**common)
+        )
+
+    # Albums hold at most ten messages. The catalog currently stores all media,
+    # so preserve every attachment if an administrator added more than ten.
+    sent = []
+    for start in range(0, len(payload), 10):
+        sent.extend(await bot.send_media_group(chat_id=chat_id, media=payload[start:start + 10]))
+    # Telegram accepts inline keyboards on an album message via editMessageReplyMarkup.
+    await bot.edit_message_reply_markup(
+        chat_id=chat_id, message_id=sent[0].message_id, reply_markup=markup,
+    )
+    return sent
+
+
+async def _replace_media_card_with_text(call: CallbackQuery, state: FSMContext,
+                                        text: str, markup, *, parse_mode: str | None = None) -> None:
+    """Switch a media card back to a plain-text screen without leaving its album behind."""
+    data = await state.get_data()
+    if not data.get("item_card_media"):
+        await call.message.edit_text(text, reply_markup=markup, parse_mode=parse_mode)
+        return
+
+    message_ids = data.get("item_card_media_ids", [])
+    for message_id in message_ids:
+        await call.bot.delete_message(chat_id=call.from_user.id, message_id=message_id)
+    await call.bot.send_message(
+        chat_id=call.from_user.id, text=text, reply_markup=markup, parse_mode=parse_mode,
+    )
+    # Keep the media list: Back to product card can recreate the same album.
+    await state.update_data(item_card_media_ids=[])
+
+
+async def _open_media_item_card(call: CallbackQuery, state: FSMContext,
+                                media: list[dict], text_item_name: str, back_data: str) -> None:
+    """Replace the catalogue list message with a captioned media product card."""
+    await state.update_data(item_card_media=media)
+    await _render_item_page(
+        call, state, text_item_name, back_data, user_id=call.from_user.id,
+        send_media=True,
+    )
+    # _render_item_page updated the old text message only when no media exists.
+    # For media cards it sent a new album; remove the now-stale catalogue list.
+    await call.message.delete()
 
 
 # --- Shop / categories / items ---
@@ -234,7 +310,9 @@ async def _show_goods_page(call: CallbackQuery, state: FSMContext,
     )
 
     await send_catalog_media(call.bot, call.from_user.id, "category", category_name)
-    await call.message.edit_text(localize("shop.goods.choose"), reply_markup=markup)
+    await _replace_media_card_with_text(
+        call, state, localize("shop.goods.choose"), markup,
+    )
     await state.update_data(
         current_category=category_name,
         goods_page_items=list(page_items),
@@ -325,8 +403,12 @@ async def _open_item(call: CallbackQuery, state: FSMContext, item_name: str, bac
         updates["applied_promo"] = None
     await state.update_data(**updates)
 
-    await send_catalog_media(call.bot, call.from_user.id, "item", item_name)
-    await _render_item_page(call, state, item_name, back_data, user_id=call.from_user.id)
+    media = await get_catalog_media("item", item_name)
+    if media:
+        await _open_media_item_card(call, state, media, item_name, back_data)
+    else:
+        await state.update_data(item_card_media=None)
+        await _render_item_page(call, state, item_name, back_data, user_id=call.from_user.id)
 
 
 @router.callback_query(F.data.startswith('itm:'))
@@ -494,7 +576,9 @@ async def _leave_promo_input(state: FSMContext) -> None:
 
 @router.callback_query(F.data == "apply_promo")
 async def apply_promo_handler(call: CallbackQuery, state: FSMContext):
-    await call.message.edit_text(localize("promo.enter_code"), reply_markup=back("back_to_item"))
+    await _replace_media_card_with_text(
+        call, state, localize("promo.enter_code"), back("back_to_item"),
+    )
     await state.update_data(pre_promo_state=await state.get_state())
     await state.set_state(PromoFSM.waiting_item_code)
 
@@ -549,7 +633,12 @@ async def back_to_item_handler(call: CallbackQuery, state: FSMContext):
         )
         return
     await _leave_promo_input(state)
-    await _render_item_page(call, state, item_name, user_id=call.from_user.id)
+    has_media = bool((await state.get_data()).get("item_card_media"))
+    await _render_item_page(
+        call, state, item_name, user_id=call.from_user.id, send_media=has_media,
+    )
+    if has_media:
+        await call.message.delete()
 
 
 # --- Balance Promo Redemption (from profile) ---
@@ -606,9 +695,8 @@ async def start_review_handler(call: CallbackQuery, state: FSMContext):
         return
 
     await state.update_data(review_item_name=item_name)
-    await call.message.edit_text(
-        localize("review.prompt_rating", name=esc(item_name)),
-        reply_markup=rating_keyboard(),
+    await _replace_media_card_with_text(
+        call, state, localize("review.prompt_rating", name=esc(item_name)), rating_keyboard(),
     )
     await state.set_state(ReviewFSM.waiting_rating)
 

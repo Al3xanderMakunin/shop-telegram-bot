@@ -22,9 +22,29 @@ from bot.handlers.user.shop_and_goods import (
     subscribe_stock_handler, unsubscribe_stock_handler,
     apply_promo_handler, promo_code_text_handler, back_to_item_handler,
     bought_items_callback_handler, bought_item_info_callback_handler,
-    _render_item_page,
+    _render_item_page, _send_item_card_media,
 )
 from bot.states import ShopStates
+
+
+class TestItemCardMedia:
+    async def test_media_album_uses_first_caption_and_its_keyboard(self, mock_bot):
+        mock_bot.send_media_group = AsyncMock(return_value=[MagicMock(message_id=101), MagicMock(message_id=102)])
+
+        markup = MagicMock()
+        await _send_item_card_media(
+            mock_bot, 42,
+            [{"media_type": "photo", "file_id": "photo-id"},
+             {"media_type": "video", "file_id": "video-id"}],
+            "<b>Product</b>", markup,
+        )
+
+        payload = mock_bot.send_media_group.await_args.kwargs["media"]
+        assert payload[0].caption == "<b>Product</b>"
+        assert payload[1].caption is None
+        mock_bot.edit_message_reply_markup.assert_awaited_once_with(
+            chat_id=42, message_id=101, reply_markup=markup,
+        )
 
 
 class TestCartHandlers:
