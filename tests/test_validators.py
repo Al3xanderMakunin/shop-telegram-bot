@@ -75,9 +75,13 @@ class TestSanitizeHtml:
 
 class TestPaymentRequest:
 
-    def test_valid_request(self):
-        req = PaymentRequest(amount=Decimal("100"), currency="RUB", provider="cryptopay")
+    @pytest.mark.parametrize("provider", [
+        "telegram", "stars", "cryptopay", "paypear", "fiat",
+    ])
+    def test_valid_request(self, provider):
+        req = PaymentRequest(amount=Decimal("100"), currency="RUB", provider=provider)
         assert req.amount == Decimal("100")
+        assert req.provider == provider
 
     @pytest.mark.parametrize("amount,currency,provider", [
         (Decimal("100"), "RUB", "paypal"),   # unsupported provider
