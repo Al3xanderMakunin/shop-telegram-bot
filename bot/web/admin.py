@@ -1,6 +1,5 @@
 import hmac
 import logging
-import os
 import time
 from decimal import Decimal, InvalidOperation
 from typing import Any
@@ -791,8 +790,6 @@ def create_admin_app(bot: Any = None) -> Starlette:
         engine=Database().engine,
         authentication_backend=auth_backend,
         title="Telegram Shop Admin",
-        # Override the (blank) SQLAdmin index page with our help/cheat-sheet.
-        templates_dir=os.path.join(os.path.dirname(__file__), "templates"),
     )
 
     admin.add_view(UserAdmin)
