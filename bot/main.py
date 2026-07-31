@@ -113,6 +113,14 @@ async def _start_admin_server(bot: Bot):
         host=EnvKeys.ADMIN_HOST,
         port=EnvKeys.ADMIN_PORT,
         log_level="warning",
+        # The panel is normally published through nginx/Traefik.  Without
+        # proxy headers Starlette believes every request is plain HTTP and
+        # SQLAdmin consequently emits ``http://.../admin/statics/...`` links.
+        # Browsers block those assets on an HTTPS page (mixed content), which
+        # leaves a completely unstyled, "bare HTML" panel.  Honour the
+        # standard X-Forwarded-* headers so generated links use HTTPS.
+        proxy_headers=True,
+        forwarded_allow_ips="*",
     )
     server = uvicorn.Server(config)
     # Keep a strong reference: the loop only holds a weak one, so a task nobody references can be garbage-collected mid-run.

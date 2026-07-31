@@ -1,0 +1,69 @@
+{% extends "sqladmin/layout.html" %}
+
+{% block content %}
+<div class="container-xl py-4">
+  <div class="row align-items-center mb-4">
+    <div class="col">
+      <div class="text-secondary text-uppercase fw-bold small">Панель управления</div>
+      <h1 class="display-6 mb-1">Telegram Shop</h1>
+      <p class="text-secondary mb-0">Управляйте магазином, заказами и пользователями из одного места.</p>
+    </div>
+    <div class="col-auto d-none d-md-block">
+      <span class="avatar avatar-xl rounded-circle bg-azure-lt">
+        <i class="fa-solid fa-store fa-xl"></i>
+      </span>
+    </div>
+  </div>
+
+  <div class="row row-cards">
+    {% set sections = [
+      ('Товары', 'Каталог, цены и остатки', 'goods', 'fa-box', 'azure'),
+      ('Категории', 'Структура каталога', 'categories', 'fa-folder-open', 'indigo'),
+      ('Склад', 'Доступные товарные позиции', 'item-values', 'fa-warehouse', 'green'),
+      ('Покупки', 'История оформленных заказов', 'bought-goods', 'fa-cart-shopping', 'orange'),
+      ('Пользователи', 'Клиенты, балансы и роли', 'user', 'fa-users', 'cyan'),
+      ('Платежи', 'Пополнения и статусы оплат', 'payments', 'fa-credit-card', 'purple'),
+      ('Промокоды', 'Скидки и маркетинговые акции', 'promo-codes', 'fa-tags', 'pink'),
+      ('Настройки', 'Параметры Telegram-бота', 'bot-settings', 'fa-gear', 'yellow')
+    ] %}
+    {% for title, description, slug, icon, color in sections %}
+    <div class="col-sm-6 col-lg-4 col-xl-3">
+      <a href="{{ request.url_for('admin:list', identity=slug) }}" class="card card-link card-link-pop h-100 text-decoration-none">
+        <div class="card-body">
+          <div class="d-flex align-items-center mb-3">
+            <span class="avatar bg-{{ color }}-lt me-3"><i class="fa-solid {{ icon }}"></i></span>
+            <h3 class="card-title mb-0">{{ title }}</h3>
+          </div>
+          <div class="text-secondary">{{ description }}</div>
+        </div>
+        <div class="card-footer bg-transparent border-0 pt-0 text-{{ color }} fw-bold">
+          Открыть <i class="fa-solid fa-arrow-right ms-1"></i>
+        </div>
+      </a>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="row row-cards mt-2">
+    <div class="col-lg-8">
+      <div class="card">
+        <div class="card-header"><h3 class="card-title">Быстрые действия</h3></div>
+        <div class="card-body d-flex flex-wrap gap-2">
+          <a href="{{ request.url_for('admin:create', identity='goods') }}" class="btn btn-primary"><i class="fa-solid fa-plus me-2"></i>Добавить товар</a>
+          <a href="{{ request.url_for('admin:create', identity='categories') }}" class="btn btn-outline-primary"><i class="fa-solid fa-folder-plus me-2"></i>Добавить категорию</a>
+          <a href="{{ request.url_for('admin:list', identity='operations') }}" class="btn btn-outline-secondary"><i class="fa-solid fa-money-bill-transfer me-2"></i>Операции</a>
+          <a href="{{ request.url_for('admin:list', identity='audit-log') }}" class="btn btn-outline-secondary"><i class="fa-solid fa-clipboard-list me-2"></i>Журнал аудита</a>
+        </div>
+      </div>
+    </div>
+    <div class="col-lg-4">
+      <div class="card bg-primary text-primary-fg">
+        <div class="card-body">
+          <h3 class="card-title text-primary-fg"><i class="fa-solid fa-circle-check me-2"></i>Админ-панель готова</h3>
+          <p class="mb-0 opacity-75">Используйте меню слева или карточки выше для навигации.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
