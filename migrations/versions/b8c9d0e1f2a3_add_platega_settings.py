@@ -1,13 +1,13 @@
 """add platega settings
 
-Revision ID: a1b2c3d4e5f6
-Revises: f8b2d3a1c5e7
+Revision ID: b8c9d0e1f2a3
+Revises: a6b7c8d9e0f1
 """
 from alembic import op
 import sqlalchemy as sa
 
-revision = "a1b2c3d4e5f6"
-down_revision = "f8b2d3a1c5e7"
+revision = "b8c9d0e1f2a3"
+down_revision = "a6b7c8d9e0f1"
 branch_labels = None
 depends_on = None
 
