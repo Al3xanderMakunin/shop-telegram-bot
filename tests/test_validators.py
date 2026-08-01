@@ -76,7 +76,7 @@ class TestSanitizeHtml:
 class TestPaymentRequest:
 
     @pytest.mark.parametrize("provider", [
-        "telegram", "stars", "cryptopay", "paypear", "fiat",
+        "telegram", "stars", "cryptopay", "paypear", "platega", "fiat",
     ])
     def test_valid_request(self, provider):
         req = PaymentRequest(amount=Decimal("100"), currency="RUB", provider=provider)
