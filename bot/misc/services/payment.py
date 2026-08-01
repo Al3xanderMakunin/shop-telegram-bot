@@ -139,21 +139,85 @@ class PayPearAPIError(Exception):
         super().__init__(f"{prefix}: {message}")
 
 class PlategaAPIError(Exception):
-    pass
+    """Raised when Platega returns an HTTP or malformed-response error."""
+
+    def __init__(self, message: str | None = None, status: int | None = None):
+        self.status = status
+        self.message = message or "Unknown Platega API error"
+        prefix = f"Platega API error [{status}]" if status else "Platega API error"
+        super().__init__(f"{prefix}: {self.message}")
+
 
 class PlategaAPI:
-    base_url = "https://app.platega.io/api/transaction"
-    async def _request(self, method, path, merchant, secret, **kwargs):
-        headers = {"X-Merchant": merchant, "X-Secret": secret, "Content-Type": "application/json"}
-        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as s:
-            async with s.request(method, self.base_url + path, headers=headers, **kwargs) as r:
-                data = await r.json(content_type=None)
-                if r.status >= 400: raise PlategaAPIError(str(data))
-                return data
-    async def create_payment(self, *, amount, currency, return_url, payment_method, order_id, description=None):
-        return await self._request("POST", "/create", self.merchant, self.secret, json={"amount": float(amount), "currency": currency, "paymentMethod": payment_method, "return": return_url, "order": order_id, "description": description or "Balance top-up"})
-    def __init__(self, merchant, secret): self.merchant, self.secret = merchant, secret
-    async def get_payment(self, payment_id): return await self._request("GET", f"/{payment_id}", self.merchant, self.secret)
+    base_url = "https://app.platega.io/api"
+
+    def __init__(self, merchant: str, secret: str):
+        self.merchant = merchant
+        self.secret = secret
+
+    async def _request(self, method: str, path: str, **kwargs) -> dict:
+        headers = {
+            "X-MerchantId": self.merchant,
+            "X-Secret": self.secret,
+            "Content-Type": "application/json",
+        }
+        try:
+            async with aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=30)
+            ) as session:
+                async with session.request(
+                    method, self.base_url + path, headers=headers, **kwargs
+                ) as response:
+                    text = await response.text()
+                    try:
+                        data = json.loads(text) if text else {}
+                    except json.JSONDecodeError:
+                        data = None
+
+                    if response.status >= 400:
+                        if isinstance(data, dict):
+                            detail = (
+                                data.get("message") or data.get("error")
+                                or data.get("detail") or text
+                            )
+                        else:
+                            detail = text
+                        raise PlategaAPIError(
+                            str(detail or response.reason or "Empty response"),
+                            response.status,
+                        )
+                    if not isinstance(data, dict):
+                        raise PlategaAPIError(
+                            "Platega returned a non-JSON response", response.status
+                        )
+                    return data
+        except PlategaAPIError:
+            raise
+        except (aiohttp.ClientError, TimeoutError) as exc:
+            raise PlategaAPIError(str(exc) or type(exc).__name__) from exc
+
+    async def create_payment(
+        self, *, amount, currency, return_url, payment_method: int,
+        order_id, description=None,
+    ) -> dict:
+        return await self._request(
+            "POST",
+            "/transaction/process",
+            json={
+                "paymentMethod": payment_method,
+                "paymentDetails": {
+                    "amount": float(amount),
+                    "currency": currency,
+                },
+                "description": description or "Balance top-up",
+                "return": return_url,
+                "failedUrl": return_url,
+                "payload": order_id,
+            },
+        )
+
+    async def get_payment(self, payment_id):
+        return await self._request("GET", f"/transaction/{payment_id}")
 
 
 class PayPearAPI:

@@ -199,11 +199,23 @@ async def process_replenish_balance(call: CallbackQuery, state: FSMContext):
             settings = await get_platega_settings()
             if not await is_platega_configured():
                 await call.answer(localize("payments.not_configured"), show_alert=True); return
-            method = {"pay_platega_sbp":"SBP", "pay_platega_card":"Card", "pay_platega_crypto":"Crypto"}[call.data]
+            # Platega PaymentMethodInt: 2 = SBP QR, 11 = cards, 13 = crypto.
+            method = {
+                "pay_platega_sbp": 2,
+                "pay_platega_card": 11,
+                "pay_platega_crypto": 13,
+            }[call.data]
             try:
                 payment = await PlategaAPI(settings["merchant"], settings["secret"]).create_payment(amount=amount_dec, currency=payment_request.currency, return_url=settings["return_url"], payment_method=method, order_id=f"tg-{call.from_user.id}-{uuid.uuid4().hex[:12]}")
+            except PlategaAPIError as e:
+                logger.exception("Platega payment creation failed")
+                await call.answer(str(e)[:180], show_alert=True)
+                return
             except Exception as e:
-                await call.answer(str(e)[:180], show_alert=True); return
+                logger.exception("Unexpected Platega payment creation error")
+                error = str(e) or type(e).__name__
+                await call.answer(f"Platega: {error}"[:180], show_alert=True)
+                return
             payment_id = payment.get("transactionId") or payment.get("id")
             pay_url = payment.get("redirect") or payment.get("redirectUrl") or payment.get("url")
             if not payment_id or not pay_url: await call.answer("Platega: invalid response", show_alert=True); return
