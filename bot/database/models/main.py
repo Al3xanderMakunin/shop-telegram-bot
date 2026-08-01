@@ -61,6 +61,10 @@ class BotSettings(Database.BASE):
         String(32), nullable=False, default="sbp", server_default="sbp"
     )
     paypear_return_url: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    platega_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default='false')
+    platega_merchant: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    platega_secret: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    platega_return_url: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
 
 
 class Role(Database.BASE):

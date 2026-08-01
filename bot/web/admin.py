@@ -410,6 +410,7 @@ class BotSettingsAdmin(AuditModelView, model=BotSettings):
         BotSettings.paypear_shop_id,
         BotSettings.paypear_payment_method,
         BotSettings.paypear_return_url,
+        BotSettings.platega_enabled, BotSettings.platega_merchant, BotSettings.platega_return_url,
     ]
     form_columns = [
         BotSettings.maintenance_mode,
@@ -420,6 +421,7 @@ class BotSettingsAdmin(AuditModelView, model=BotSettings):
         BotSettings.paypear_secret_key,
         BotSettings.paypear_payment_method,
         BotSettings.paypear_return_url,
+        BotSettings.platega_enabled, BotSettings.platega_merchant, BotSettings.platega_secret, BotSettings.platega_return_url,
     ]
     form_args = {
         "topup_notification_chat_id": {

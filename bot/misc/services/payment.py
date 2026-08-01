@@ -138,6 +138,23 @@ class PayPearAPIError(Exception):
         prefix = f"PayPear API error [{status}]" if status else "PayPear API error"
         super().__init__(f"{prefix}: {message}")
 
+class PlategaAPIError(Exception):
+    pass
+
+class PlategaAPI:
+    base_url = "https://app.platega.io/api/transaction"
+    async def _request(self, method, path, merchant, secret, **kwargs):
+        headers = {"X-Merchant": merchant, "X-Secret": secret, "Content-Type": "application/json"}
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as s:
+            async with s.request(method, self.base_url + path, headers=headers, **kwargs) as r:
+                data = await r.json(content_type=None)
+                if r.status >= 400: raise PlategaAPIError(str(data))
+                return data
+    async def create_payment(self, *, amount, currency, return_url, payment_method, order_id, description=None):
+        return await self._request("POST", "/create", self.merchant, self.secret, json={"amount": float(amount), "currency": currency, "paymentMethod": payment_method, "return": return_url, "order": order_id, "description": description or "Balance top-up"})
+    def __init__(self, merchant, secret): self.merchant, self.secret = merchant, secret
+    async def get_payment(self, payment_id): return await self._request("GET", f"/{payment_id}", self.merchant, self.secret)
+
 
 class PayPearAPI:
     """Async client for the PayPear payment API."""

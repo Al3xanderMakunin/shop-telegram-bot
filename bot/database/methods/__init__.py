@@ -14,4 +14,5 @@ from bot.database.methods.settings import (
     set_topup_notification_settings,
     get_paypear_settings,
     is_paypear_configured,
+    get_platega_settings, is_platega_configured,
 )

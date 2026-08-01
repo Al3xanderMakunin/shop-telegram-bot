@@ -39,6 +39,15 @@ async def is_paypear_configured() -> bool:
         and settings["return_url"]
     )
 
+async def get_platega_settings() -> dict:
+    async with Database().session() as s:
+        row = (await s.execute(select(BotSettings.platega_enabled, BotSettings.platega_merchant, BotSettings.platega_secret, BotSettings.platega_return_url).where(BotSettings.id == 1))).one_or_none()
+        if not row: return {"enabled": False, "merchant": None, "secret": None, "return_url": None}
+        return {"enabled": bool(row.platega_enabled), "merchant": row.platega_merchant, "secret": row.platega_secret, "return_url": row.platega_return_url}
+
+async def is_platega_configured() -> bool:
+    x = await get_platega_settings(); return bool(x["enabled"] and x["merchant"] and x["secret"] and x["return_url"])
+
 
 async def get_maintenance_mode() -> bool:
     """Read the persisted maintenance-mode flag."""

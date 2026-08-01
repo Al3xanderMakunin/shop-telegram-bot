@@ -1,5 +1,6 @@
 import hashlib
 import json
+import uuid
 from decimal import Decimal, ROUND_HALF_UP
 
 from aiogram import Router, F
@@ -9,7 +10,7 @@ from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 
 from bot.database.methods import (
     get_user_referral, buy_item_transaction, process_payment_with_referral,
-    create_pending_payment, get_paypear_settings, is_paypear_configured,
+    create_pending_payment, get_paypear_settings, is_paypear_configured, get_platega_settings, is_platega_configured,
 )
 from bot.keyboards import back, payment_menu, close, get_payment_choice
 from bot.logger_mesh import logger
@@ -25,6 +26,7 @@ from bot.misc.services import (
     send_fiat_invoice,
     PayPearAPI,
     PayPearAPIError,
+    PlategaAPI, PlategaAPIError,
 )
 from bot.misc.services.topup_notifier import notify_balance_topup
 from bot.misc.services.payment import _minor_units_for, payload_amount
@@ -114,7 +116,7 @@ async def invalid_amount(message: Message, state: FSMContext):
 
 @router.callback_query(
     BalanceStates.waiting_payment,
-    F.data.in_(["pay_cryptopay", "pay_paypear", "pay_stars", "pay_fiat"])
+    F.data.in_(["pay_cryptopay", "pay_paypear", "pay_platega_sbp", "pay_platega_card", "pay_platega_crypto", "pay_stars", "pay_fiat"])
 )
 async def process_replenish_balance(call: CallbackQuery, state: FSMContext):
     """Create an invoice for the chosen payment method."""
@@ -131,6 +133,7 @@ async def process_replenish_balance(call: CallbackQuery, state: FSMContext):
     provider_map = {
         "pay_cryptopay": "cryptopay",
         "pay_paypear": "paypear",
+        "pay_platega_sbp": "platega", "pay_platega_card": "platega", "pay_platega_crypto": "platega",
         "pay_stars": "stars",
         "pay_fiat": "fiat"
     }
@@ -191,6 +194,22 @@ async def process_replenish_balance(call: CallbackQuery, state: FSMContext):
                          currency=payment_request.currency),
                 reply_markup=payment_menu(pay_url)
             )
+
+        elif call.data.startswith("pay_platega_"):
+            settings = await get_platega_settings()
+            if not await is_platega_configured():
+                await call.answer(localize("payments.not_configured"), show_alert=True); return
+            method = {"pay_platega_sbp":"SBP", "pay_platega_card":"Card", "pay_platega_crypto":"Crypto"}[call.data]
+            try:
+                payment = await PlategaAPI(settings["merchant"], settings["secret"]).create_payment(amount=amount_dec, currency=payment_request.currency, return_url=settings["return_url"], payment_method=method, order_id=f"tg-{call.from_user.id}-{uuid.uuid4().hex[:12]}")
+            except Exception as e:
+                await call.answer(str(e)[:180], show_alert=True); return
+            payment_id = payment.get("transactionId") or payment.get("id")
+            pay_url = payment.get("redirect") or payment.get("redirectUrl") or payment.get("url")
+            if not payment_id or not pay_url: await call.answer("Platega: invalid response", show_alert=True); return
+            await create_pending_payment(provider="platega", external_id=str(payment_id), user_id=call.from_user.id, amount=int(amount_dec), currency=payment_request.currency)
+            await state.update_data(invoice_id=payment_id, payment_type="platega")
+            await call.message.edit_text(localize("payments.invoice.summary", amount=int(amount_dec), minutes=int(ttl_seconds/60), button=localize("btn.check_payment"), currency=payment_request.currency), reply_markup=payment_menu(pay_url))
 
         elif call.data == "pay_paypear":
             settings = await get_paypear_settings()

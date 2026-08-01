@@ -236,6 +236,9 @@ def get_payment_choice() -> InlineKeyboardMarkup:
         [
             (localize("btn.pay.crypto"), "pay_cryptopay"),
             (localize("btn.pay.paypear"), "pay_paypear"),
+            ("СБП (Platega)", "pay_platega_sbp"),
+            ("Карты (Platega)", "pay_platega_card"),
+            ("Криптовалюта (Platega)", "pay_platega_crypto"),
             (localize("btn.pay.stars"), "pay_stars"),
             (localize("btn.pay.tg"), "pay_fiat"),
             (localize("btn.back"), "replenish_balance"),
