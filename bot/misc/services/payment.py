@@ -149,7 +149,9 @@ class PlategaAPIError(Exception):
 
 
 class PlategaAPI:
-    base_url = "https://app.platega.io/api"
+    # Platega's documented paths are rooted directly at app.platega.io.
+    # There is no /api prefix: it returns 404.
+    base_url = "https://app.platega.io"
 
     def __init__(self, merchant: str, secret: str):
         self.merchant = merchant
